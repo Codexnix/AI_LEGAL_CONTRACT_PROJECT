@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Contract Analysis Pipeline</title>
+    <meta name="description" content="Upload contract PDFs, extract key clauses, generate summaries, and download structured reports.">
+    <meta name="theme-color" content="#0a0908">
+
+    <!-- Bootstrap 5 (kept for existing component/behavioral hooks used by script.js) -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+
+    <!-- Google Fonts: Playfair Display (display) + Inter (body/UI) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Project styles (unchanged reference; theme below is scoped in-page) -->
+    <link rel="stylesheet" href="/static/css/style.css">
+
+    <style>
+        /* ==========================================================
+           DESIGN TOKENS — Dark Luxury Legal AI (Black + Gold)
+           ========================================================== */
+        :root {
+            --ink-black: #0a0908;
+            --ink-panel: #131110;
+            --ink-panel-raised: #1a1714;
+            --hairline: rgba(198, 161, 91, 0.16);
+            --hairline-strong: rgba(198, 161, 91, 0.32);
+
+            --gold: #c6a15b;
+            --gold-bright: #e8c77c;
+            --gold-dim: #8a7040;
+
+            --parchment: #f4efe4;
+            --parchment-dim: #b9b2a4;
+            --parchment-faint: #7d786f;
+
+            --success: #7fae82;
+            --danger: #c56a5f;
+
+            --font-display: "Playfair Display", "Times New Roman", serif;
+            --font-body: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+
+            --radius-lg: 18px;
+            --radius-md: 12px;
+            --radius-sm: 8px;
+
+            --shadow-deep: 0 30px 80px -30px rgba(0, 0, 0, 0.75);
+            --ease: cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        *, *::before, *::after { box-sizing: border-box; }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            margin: 0;
+            background: var(--ink-black);
+            color: var(--parchment);
+            font-family: var(--font-body);
+            font-size: 16px;
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .visually-hidden, .sr-only {
+            position: absolute !important;
+            width: 1px; height: 1px;
+            padding: 0; margin: -1px;
+            overflow: hidden;
+            clip: rect(0,0,0,0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        a.visually-hidden-focusable:focus {
+            position: fixed !important;
+            top: 1rem; left: 1rem;
+            width: auto; height: auto;
+            z-index: 999;
+            background: var(--gold);
+            color: var(--ink-black);
+            padding: 0.75rem 1.25rem;
+            border-radius: var(--radius-sm);
+            font-weight: 600;
+            clip: auto;
+        }
+
+        :focus-visible {
+            outline: 2px solid var(--gold-bright);
+            outline-offset: 3px;
+        }
+
+        .container { max-width: 1280px; margin: 0 auto; padding: 0 1.75rem; }
+
+        /* ==========================================================
+           HEADER — slim, sits over the hero
+           ========================================================== */
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 40;
+            background: linear-gradient(to bottom, rgba(10,9,8,0.92), rgba(10,9,8,0.55));
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--hairline);
+        }
+
+        .site-header__inner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.9rem 0;
+        }
+
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.65rem;
+            text-decoration: none;
+            color: var(--parchment);
+        }
+
+        .brand__mark {
+            display: inline-grid;
+            place-items: center;
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            border: 1px solid var(--hairline-strong);
+            color: var(--gold);
+            font-size: 0.9rem;
+            background: radial-gradient(circle at 30% 30%, rgba(198,161,91,0.18), transparent 70%);
+        }
+
+        .brand__name {
+            font-family: var(--font-body);
+            font-size: 0.82rem;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--parchment-dim);
+        }
+
+        .badge-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-family: var(--font-body);
+            font-size: 0.72rem;
+            font-weight: 500;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--parchment-dim);
+            border: 1px solid var(--hairline);
+            border-radius: 999px;
+            padding: 0.35rem 0.85rem;
+        }
+
+        .badge-status__dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: var(--success);
+            box-shadow: 0 0 0 3px rgba(127, 174, 130, 0.18);
+        }
+
+        /* ==========================================================
+           HERO — full-screen, background statue image visible right
+           ========================================================== */
+        .hero {
+            position: relative;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            overflow: hidden;
+            background-color: var(--ink-black);
+            /* The background photograph already contains the Lady Justice
+               statue; no <img> tag is used, per design spec. Update the
+               path below to the project's actual hero asset. */
+            background-image:
+                linear-gradient(90deg, rgba(10,9,8,0.97) 0%, rgba(10,9,8,0.88) 32%, rgba(10,9,8,0.35) 62%, rgba(10,9,8,0.55) 100%),
+                url("/static/images/hero-lady-justice.jpg");
+            background-size: cover;
+            background-position: center right;
+        }
+
+        /* signature element: a gold docket rule running down the left
+           margin, evoking the ruled margin of a legal filing */
+        .docket-rule {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: clamp(1.25rem, 4vw, 3.5rem);
+            width: 1px;
+            background: linear-gradient(to bottom, transparent, var(--hairline-strong) 12%, var(--hairline-strong) 88%, transparent);
+            pointer-events: none;
+        }
+        .docket-rule::before,
+        .docket-rule::after {
+            content: "";
+            position: absolute;
+            left: -3px;
+            width: 7px;
+            height: 1px;
+            background: var(--gold-dim);
+        }
+        .docket-rule::before { top: 22%; }
+        .docket-rule::after { top: 78%; }
+
+        .hero .container {
+            position: relative;
+            z-index: 2;
+            display: grid;
+            grid-template-columns: minmax(0, 640px) 1fr;
+            gap: 2rem;
+            width: 100%;
+            padding-top: 4.5rem;
+            padding-bottom: 3.5rem;
+        }
+
+        .hero__content {
+            padding-left: clamp(0.5rem, 3vw, 2.5rem);
+        }
+
+        /* .hero__visual is intentionally left unstyled: it exists only
+           as an empty grid cell (second column above) that reserves
+           space so the statue in the background image stays fully
+           visible on wide screens. No declarations are needed here. */
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.55rem;
+            font-family: var(--font-body);
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            color: var(--gold);
+            margin: 0 0 1.35rem;
+        }
+        .eyebrow::before {
+            content: "";
+            width: 26px;
+            height: 1px;
+            background: var(--gold-dim);
+        }
+
+        .hero__title {
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: clamp(2.75rem, 6vw, 4.75rem);
+            line-height: 1.04;
+            letter-spacing: -0.01em;
+            color: var(--parchment);
+            margin: 0 0 1.5rem;
+        }
+
+        .hero__title span {
+            display: block;
+            opacity: 0;
+            transform: translateY(0.4em);
+            animation: rise 0.9s var(--ease) forwards;
+        }
+        .hero__title span:nth-child(1) { animation-delay: 0.05s; }
+        .hero__title span:nth-child(2) { animation-delay: 0.22s; color: var(--gold); font-style: italic; font-weight: 600; }
+        .hero__title span:nth-child(3) { animation-delay: 0.39s; }
+
+        @keyframes rise {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .hero__subtitle {
+            font-size: 1.05rem;
+            line-height: 1.65;
+            color: var(--parchment-dim);
+            max-width: 46ch;
+            margin: 0 0 2.25rem;
+        }
+
+        /* ==========================================================
+           GLASS UPLOAD CARD
+           ========================================================== */
+        .panel {
+            background: linear-gradient(165deg, rgba(26,23,20,0.72), rgba(19,17,16,0.55));
+            border: 1px solid var(--hairline);
+            border-radius: var(--radius-lg);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            box-shadow: var(--shadow-deep);
+            padding: 1.85rem;
+        }
+
+        .panel__header {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 1.1rem;
+        }
+
+        .panel__title {
+            font-family: var(--font-body);
+            font-size: 0.95rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            color: var(--parchment);
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            margin: 0;
+        }
+        .panel__title i { color: var(--gold); font-size: 0.95rem; }
+
+        .panel__hint {
+            font-size: 0.75rem;
+            color: var(--parchment-faint);
+            font-weight: 500;
+        }
+
+        .dropzone {
+            border: 1.5px dashed var(--hairline-strong);
+            border-radius: var(--radius-md);
+            padding: 2.5rem 1.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.25s var(--ease), background-color 0.25s var(--ease);
+            background: rgba(198, 161, 91, 0.02);
+        }
+        .dropzone:hover,
+        .dropzone:focus-visible {
+            border-color: var(--gold);
+            background: rgba(198, 161, 91, 0.06);
+        }
+        .dropzone.is-dragover {
+            border-color: var(--gold-bright);
+            background: rgba(198, 161, 91, 0.1);
+        }
+
+        .dropzone__icon {
+            font-size: 1.9rem;
+            color: var(--gold);
+            margin-bottom: 0.85rem;
+            display: block;
+        }
+
+        .dropzone__title {
+            font-family: var(--font-body);
+            font-weight: 600;
+            font-size: 1.02rem;
+            color: var(--parchment);
+            margin: 0 0 0.2rem;
+        }
+
+        .dropzone__subtitle {
+            font-size: 0.85rem;
+            color: var(--parchment-faint);
+            margin: 0 0 1rem;
+        }
+
+        .dropzone__meta {
+            margin-top: 1.1rem;
+            display: flex;
+            justify-content: center;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+            font-size: 0.74rem;
+            color: var(--parchment-faint);
+        }
+        .dropzone__meta strong { color: var(--parchment-dim); font-weight: 600; }
+
+        .btn {
+            font-family: var(--font-body);
+            font-weight: 600;
+            border-radius: var(--radius-sm);
+            letter-spacing: 0.01em;
+        }
+
+        .btn-outline-primary {
+            --bs-btn-color: var(--gold);
+            --bs-btn-border-color: var(--hairline-strong);
+            --bs-btn-hover-bg: var(--gold);
+            --bs-btn-hover-border-color: var(--gold);
+            --bs-btn-hover-color: var(--ink-black);
+            --bs-btn-active-bg: var(--gold);
+            --bs-btn-active-border-color: var(--gold);
+            background: transparent;
+        }
+
+        .dropzone__browse {
+            margin-top: 0.2rem;
+        }
+
+        .file-summary {
+            margin-top: 1.25rem;
+            border-top: 1px solid var(--hairline);
+            padding-top: 1.1rem;
+        }
+
+        .file-summary__header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.6rem;
+        }
+
+        .file-summary__title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--parchment);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin: 0;
+        }
+
+        .file-summary__count.badge {
+            background: var(--gold) !important;
+            color: var(--ink-black) !important;
+            font-weight: 700;
+        }
+
+        .file-summary__clear {
+            color: var(--parchment-faint);
+            font-size: 0.78rem;
+            text-decoration: none;
+        }
+        .file-summary__clear:hover { color: var(--gold); }
+
+        .file-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            max-height: 180px;
+            overflow-y: auto;
+        }
+
+        .file-list li {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            font-size: 0.82rem;
+            color: var(--parchment-dim);
+            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--hairline);
+            border-radius: var(--radius-sm);
+            padding: 0.5rem 0.75rem;
+        }
+
+        .workspace__actions {
+            margin-top: 1.5rem;
+        }
+
+        .btn-start {
+            width: 100%;
+            background: linear-gradient(135deg, var(--gold-bright), var(--gold));
+            color: var(--ink-black);
+            border: none;
+            padding: 0.95rem 1.5rem;
+            font-size: 1rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.6rem;
+            box-shadow: 0 18px 40px -18px rgba(198, 161, 91, 0.55);
+            transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease), opacity 0.2s var(--ease);
+        }
+        .btn-start:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 22px 46px -16px rgba(198, 161, 91, 0.65);
+        }
+        .btn-start:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        /* ==========================================================
+           WORKSPACE (progress / alerts / downloads live below the fold too)
+           ========================================================== */
+        .workspace {
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+        }
+
+        .panel--progress { margin-top: 0; }
+
+        .progress {
+            height: 6px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 999px;
+            overflow: hidden;
+            margin-bottom: 0.75rem;
+        }
+        .progress-bar {
+            background: linear-gradient(90deg, var(--gold-dim), var(--gold-bright));
+        }
+
+        .progress-status {
+            font-size: 0.82rem;
+            color: var(--parchment-dim);
+            margin: 0;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .result-messages { display: flex; flex-direction: column; gap: 0.75rem; }
+
+        .result-alert {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.85rem;
+            border-radius: var(--radius-md);
+            padding: 1rem 1.15rem;
+            border: 1px solid var(--hairline);
+        }
+        .result-alert.alert-success {
+            background: rgba(127, 174, 130, 0.08);
+            border-color: rgba(127, 174, 130, 0.35);
+            color: var(--parchment);
+        }
+        .result-alert.alert-danger {
+            background: rgba(197, 106, 95, 0.08);
+            border-color: rgba(197, 106, 95, 0.35);
+            color: var(--parchment);
+        }
+        .result-alert i { margin-top: 0.15rem; }
+        .result-alert.alert-success i { color: var(--success); }
+        .result-alert.alert-danger i { color: var(--danger); }
+        .result-alert__title { font-weight: 600; margin: 0 0 0.15rem; font-size: 0.92rem; }
+        .result-alert__detail { margin: 0; font-size: 0.85rem; color: var(--parchment-dim); }
+
+        .download-actions {
+            display: flex;
+            gap: 0.85rem;
+            flex-wrap: wrap;
+        }
+
+        .btn-download {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.55rem;
+            padding: 0.7rem 1.2rem;
+        }
+
+        /* ==========================================================
+           FEATURE CARDS
+           ========================================================== */
+        .features {
+            padding: 5.5rem 0;
+            border-top: 1px solid var(--hairline);
+            background: linear-gradient(180deg, var(--ink-black), var(--ink-panel) 60%, var(--ink-black));
+        }
+
+        .features__head { max-width: 60ch; margin: 0 0 3rem; }
+
+        .features__eyebrow {
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--gold);
+            margin: 0 0 0.85rem;
+        }
+
+        .features__title {
+            font-family: var(--font-display);
+            font-size: clamp(1.8rem, 3vw, 2.5rem);
+            font-weight: 600;
+            color: var(--parchment);
+            margin: 0;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1.5rem;
+        }
+
+        .feature-card {
+            background: var(--ink-panel-raised);
+            border: 1px solid var(--hairline);
+            border-top: 2px solid var(--gold-dim);
+            border-radius: var(--radius-md);
+            padding: 1.9rem 1.6rem;
+            transition: transform 0.25s var(--ease), border-color 0.25s var(--ease);
+        }
+        .feature-card:hover {
+            transform: translateY(-4px);
+            border-top-color: var(--gold-bright);
+        }
+
+        .feature-card__icon {
+            width: 44px;
+            height: 44px;
+            display: inline-grid;
+            place-items: center;
+            border-radius: 50%;
+            border: 1px solid var(--hairline-strong);
+            color: var(--gold);
+            font-size: 1.1rem;
+            margin-bottom: 1.15rem;
+        }
+
+        .feature-card__title {
+            font-family: var(--font-body);
+            font-size: 1.02rem;
+            font-weight: 600;
+            color: var(--parchment);
+            margin: 0 0 0.5rem;
+        }
+
+        .feature-card__text {
+            font-size: 0.87rem;
+            color: var(--parchment-dim);
+            line-height: 1.6;
+            margin: 0;
+        }
+
+        /* ==========================================================
+           RESULTS / STATS SECTION
+           ========================================================== */
+        .results {
+            padding: 5.5rem 0 6.5rem;
+        }
+
+        .results__panel {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 2.5rem;
+            align-items: center;
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 1.5rem;
+        }
+
+        .stat-card {
+            border: 1px solid var(--hairline);
+            border-radius: var(--radius-md);
+            padding: 1.25rem 1.4rem;
+            background: rgba(255,255,255,0.015);
+        }
+
+        .stat-card__label {
+            font-size: 0.72rem;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--parchment-faint);
+            margin: 0 0 0.4rem;
+        }
+
+        .stat-card__value {
+            font-family: var(--font-display);
+            font-size: 2rem;
+            font-weight: 600;
+            color: var(--gold);
+            margin: 0;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .results__downloads {
+            display: flex;
+            flex-direction: column;
+            gap: 0.85rem;
+            justify-self: end;
+        }
+
+        /* ==========================================================
+           FOOTER
+           ========================================================== */
+        .site-footer {
+            border-top: 1px solid var(--hairline);
+            padding: 2rem 0;
+            background: var(--ink-black);
+        }
+        .site-footer__text {
+            margin: 0;
+            font-size: 0.8rem;
+            color: var(--parchment-faint);
+            text-align: center;
+        }
+
+        /* ==========================================================
+           RESPONSIVE
+           ========================================================== */
+        @media (max-width: 991px) {
+            .hero .container { grid-template-columns: 1fr; padding-top: 3.5rem; }
+            .hero__visual { display: none; }
+            .hero { background-position: center 20%; min-height: auto; padding-bottom: 1rem; }
+            .docket-rule { display: none; }
+            .feature-grid { grid-template-columns: repeat(2, 1fr); }
+            .results__panel { grid-template-columns: 1fr; }
+            .results__downloads { justify-self: start; }
+            .stat-grid { grid-template-columns: 1fr; }
+        }
+
+        @media (max-width: 575px) {
+            .feature-grid { grid-template-columns: 1fr; }
+            .panel { padding: 1.35rem; }
+            .hero__title { font-size: 2.4rem; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .hero__title span {
+                animation: none;
+                opacity: 1;
+                transform: none;
+            }
+            .feature-card, .btn-start { transition: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <a class="visually-hidden-focusable" href="#main-content">Skip to main content</a>
+
+    <header class="site-header">
+        <div class="container">
+            <div class="site-header__inner">
+                <a class="brand" href="/" aria-label="AI Contract Analysis Pipeline home">
+                    <span class="brand__mark" aria-hidden="true">
+                        <i class="fa-solid fa-scale-balanced"></i>
+                    </span>
+                    <span class="brand__name">AI Contract&nbsp;Analysis&nbsp;Pipeline</span>
+                </a>
+                <span class="badge-status" title="API health">
+                    <span class="badge-status__dot" aria-hidden="true"></span>
+                    Engine online
+                </span>
+            </div>
+        </div>
+    </header>
+
+    <main id="main-content">
+
+        <!-- Hero -->
+        <section class="hero" aria-labelledby="hero-heading">
+            <div class="docket-rule" aria-hidden="true"></div>
+            <div class="container">
+
+                <div class="hero__content">
+                    <p class="eyebrow">Automated legal document review</p>
+
+                    <h1 class="hero__title" id="hero-heading">
+                        <span>AI Contract</span>
+                        <span>Analysis</span>
+                        <span>Pipeline</span>
+                    </h1>
+
+                    <p class="hero__subtitle">
+                        Upload legal contracts, automatically extract termination,
+                        confidentiality and liability clauses, and generate executive
+                        summaries in seconds using AI.
+                    </p>
+
+                    <div class="workspace">
+
+                        <!-- Upload -->
+                        <section class="panel" aria-labelledby="upload-heading">
+                            <div class="panel__header">
+                                <h2 id="upload-heading" class="panel__title">
+                                    <i class="fa-regular fa-file-lines" aria-hidden="true"></i>
+                                    Upload contracts
+                                </h2>
+                                <span class="panel__hint">PDF only &middot; multiple files supported</span>
+                            </div>
+
+                            <form id="upload-form" novalidate>
+                                <div class="dropzone" id="dropzone" tabindex="0" role="button"
+                                     aria-describedby="dropzone-help"
+                                     aria-label="Drag and drop PDF contracts here, or activate to browse files">
+                                    <i class="fa-solid fa-cloud-arrow-up dropzone__icon" aria-hidden="true"></i>
+                                    <p class="dropzone__title">Drag &amp; drop PDF contracts here</p>
+                                    <p class="dropzone__subtitle" id="dropzone-help">or</p>
+                                    <label class="btn btn-outline-primary dropzone__browse" for="file-input">
+                                        Browse files
+                                    </label>
+                                    <input
+                                        type="file"
+                                        id="file-input"
+                                        name="files"
+                                        class="visually-hidden"
+                                        accept="application/pdf,.pdf"
+                                        multiple
+                                    >
+                                    <p class="dropzone__meta">
+                                        <span><strong>Supported format:</strong> PDF</span>
+                                        <span><strong>Maximum:</strong> 20 PDFs per batch</span>
+                                    </p>
+                                </div>
+
+                                <div class="file-summary" id="file-summary" hidden>
+                                    <div class="file-summary__header">
+                                        <h3 class="file-summary__title">
+                                            Selected files
+                                            <span class="badge text-bg-primary file-summary__count" id="file-count">0</span>
+                                        </h3>
+                                        <button type="button" class="btn btn-sm btn-link file-summary__clear" id="clear-files">
+                                            Clear all
+                                        </button>
+                                    </div>
+                                    <ul class="file-list" id="file-list"></ul>
+                                </div>
+
+                                <div class="workspace__actions">
+                                    <button type="submit" class="btn btn-primary btn-lg btn-start" id="start-analysis-btn" disabled>
+                                        <i class="fa-solid fa-play" aria-hidden="true"></i>
+                                        Start Analysis
+                                    </button>
+                                </div>
+                            </form>
+                        </section>
+
+                        <!-- Progress -->
+                        <section class="panel panel--progress" id="progress-section" aria-labelledby="progress-heading" hidden>
+                            <div class="panel__header">
+                                <h2 id="progress-heading" class="panel__title">
+                                    <i class="fa-regular fa-hourglass-half" aria-hidden="true"></i>
+                                    Pipeline progress
+                                </h2>
+                            </div>
+                            <div class="progress" role="progressbar" aria-label="Analysis progress"
+                                 aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated"
+                                     id="progress-bar" style="width: 0%"></div>
+                            </div>
+                            <p class="progress-status" id="progress-status" aria-live="polite">
+                                Waiting to start&hellip;
+                            </p>
+                        </section>
+
+                        <!-- Result messages -->
+                        <div class="result-messages" aria-live="polite">
+                            <div class="alert alert-success result-alert" id="success-alert" role="status" hidden>
+                                <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                                <div class="result-alert__body">
+                                    <p class="result-alert__title">Analysis complete</p>
+                                    <p class="result-alert__detail" id="success-detail"></p>
+                                </div>
+                            </div>
+
+                            <div class="alert alert-danger result-alert" id="error-alert" role="alert" hidden>
+                                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                                <div class="result-alert__body">
+                                    <p class="result-alert__title">Something went wrong</p>
+                                    <p class="result-alert__detail" id="error-detail"></p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Downloads -->
+                        <section class="panel" aria-labelledby="downloads-heading">
+                            <div class="panel__header">
+                                <h2 id="downloads-heading" class="panel__title">
+                                    <i class="fa-solid fa-download" aria-hidden="true"></i>
+                                    Download reports
+                                </h2>
+                                <span class="panel__hint">Available once analysis has completed</span>
+                            </div>
+                            <div class="download-actions">
+                                <a class="btn btn-outline-primary btn-download" id="download-json" href="/download/json" download>
+                                    <i class="fa-regular fa-file-code" aria-hidden="true"></i>
+                                    Download JSON
+                                </a>
+                                <a class="btn btn-outline-primary btn-download" id="download-csv" href="/download/csv" download>
+                                    <i class="fa-regular fa-file-excel" aria-hidden="true"></i>
+                                    Download CSV
+                                </a>
+                            </div>
+                        </section>
+
+                    </div>
+                </div>
+
+                <!-- Empty on purpose: fills the second grid column so the
+                     hero background photo stays visible on wide screens. -->
+                <div class="hero__visual" aria-hidden="true"></div>
+
+            </div>
+        </section>
+
+        <!-- Feature cards -->
+        <section class="features" aria-labelledby="features-heading">
+            <div class="container">
+                <div class="features__head">
+                    <p class="features__eyebrow">How the pipeline works</p>
+                    <h2 class="features__title" id="features-heading">Built for firms that can't afford a guess</h2>
+                </div>
+
+                <div class="feature-grid">
+                    <article class="feature-card">
+                        <span class="feature-card__icon" aria-hidden="true"><i class="fa-solid fa-lock"></i></span>
+                        <h3 class="feature-card__title">Secure Processing</h3>
+                        <p class="feature-card__text">Documents are processed in isolated sessions and never retained longer than the analysis requires.</p>
+                    </article>
+                    <article class="feature-card">
+                        <span class="feature-card__icon" aria-hidden="true"><i class="fa-solid fa-magnifying-glass"></i></span>
+                        <h3 class="feature-card__title">AI Clause Extraction</h3>
+                        <p class="feature-card__text">Termination, confidentiality and liability clauses are located and pulled verbatim from the source text.</p>
+                    </article>
+                    <article class="feature-card">
+                        <span class="feature-card__icon" aria-hidden="true"><i class="fa-regular fa-file-lines"></i></span>
+                        <h3 class="feature-card__title">Executive Summary</h3>
+                        <p class="feature-card__text">Each contract is distilled into a concise summary written for decision-makers, not lawyers.</p>
+                    </article>
+                    <article class="feature-card">
+                        <span class="feature-card__icon" aria-hidden="true"><i class="fa-solid fa-table-list"></i></span>
+                        <h3 class="feature-card__title">Structured Reports</h3>
+                        <p class="feature-card__text">Results export cleanly to JSON or CSV, ready to drop into whatever system runs your review.</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <!-- Results -->
+        <section class="results" aria-labelledby="results-heading">
+            <div class="container">
+                <div class="features__head">
+                    <p class="features__eyebrow">Batch summary</p>
+                    <h2 class="features__title" id="results-heading">Result</h2>
+                </div>
+
+                <div class="results__panel">
+                    <div class="stat-grid">
+                        <div class="stat-card">
+                            <p class="stat-card__label">Processed PDFs</p>
+                            <p class="stat-card__value" id="result-processed">&mdash;</p>
+                        </div>
+                        <div class="stat-card">
+                            <p class="stat-card__label">Failed PDFs</p>
+                            <p class="stat-card__value" id="result-failed">&mdash;</p>
+                        </div>
+                        <div class="stat-card">
+                            <p class="stat-card__label">Processing time</p>
+                            <p class="stat-card__value" id="result-time">&mdash;</p>
+                        </div>
+                    </div>
+
+                    <div class="results__downloads">
+                        <a class="btn btn-outline-primary btn-download" href="/download/json" download aria-hidden="true" tabindex="-1">
+                            <i class="fa-regular fa-file-code" aria-hidden="true"></i>
+                            Download JSON
+                        </a>
+                        <a class="btn btn-outline-primary btn-download" href="/download/csv" download aria-hidden="true" tabindex="-1">
+                            <i class="fa-regular fa-file-excel" aria-hidden="true"></i>
+                            Download CSV
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="site-footer">
+        <div class="container">
+            <p class="site-footer__text">
+                Built with FastAPI, Groq Llama-3.3-70B, Pydantic, PyMuPDF.
+            </p>
+        </div>
+    </footer>
+
+    <!-- Bootstrap 5 bundle (Popper included) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Project script (unchanged) -->
+    <script src="/static/js/script.js"></script>
+</body>
+</html>
