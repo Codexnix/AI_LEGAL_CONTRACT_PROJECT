@@ -74,6 +74,33 @@ No legal knowledge is required to use it — the whole point is that the tool ab
 - 🌐 **REST API** built with FastAPI, fully documented and inspectable
 
 ---
+## 🌐 Deployment Notes
+
+This application is deployed on the free tier of Render for demonstration purposes.
+
+### Ephemeral File Storage
+
+The current implementation stores uploaded PDF files temporarily on the server's local filesystem (`data/raw_pdfs`).
+
+Render's free tier uses **ephemeral storage**, which means:
+
+- Uploaded files are **not permanently stored**.
+- Files may be removed automatically whenever the application is restarted, redeployed, or the hosting environment is refreshed.
+- Users should upload their documents again if the service has restarted.
+
+This behavior is a characteristic of the hosting platform and **not a limitation of the application itself**.
+
+### Production Recommendation
+
+For a production deployment, uploaded documents should be stored in a persistent object storage service such as:
+
+- Amazon S3
+- Azure Blob Storage
+- Google Cloud Storage
+- Cloudinary
+- Backblaze B2
+
+Replacing local storage with cloud object storage would allow uploaded files to persist across deployments and server restarts without requiring changes to the core contract analysis pipeline.
 
 ## 🏗️ Complete Architecture
 
